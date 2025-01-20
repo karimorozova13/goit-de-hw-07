@@ -12,6 +12,8 @@ default_args = {
     'start_date': datetime(2024, 8, 4, 0, 0),
 }
 
+connection_name = "goit_mysql_db"
+
 def choose_medal_type():
     return random.choice(['Bronze', 'Silver', 'Gold'])
 
@@ -19,18 +21,26 @@ def delayed_execution():
     time.sleep(35)
 
 with DAG(
-        'medal_statistics_dag',
+        'kari_mo',
         default_args=default_args,
         schedule_interval=None,
         catchup=False,
         tags=["kari"]
 ) as dag:
 
+    create_schema = MySqlOperator(
+    task_id='create_schema',
+    mysql_conn_id=connection_name,
+    sql="""
+    CREATE DATABASE IF NOT EXISTS kari_mo;
+    """
+    )
+
     create_table = MySqlOperator(
         task_id='create_table',
-        mysql_conn_id='goit_mysql_db',
+        mysql_conn_id=connection_name,
         sql="""
-        CREATE TABLE IF NOT EXISTS kari_medal_statistics (
+        CREATE TABLE IF NOT EXISTS kari_mo.kari_statistics (
             id INT AUTO_INCREMENT PRIMARY KEY,
             medal_type VARCHAR(255),
             count INT,
@@ -46,9 +56,9 @@ with DAG(
 
     bronze_task = MySqlOperator(
         task_id='bronze_task',
-        mysql_conn_id='goit_mysql_db',
+        mysql_conn_id=connection_name,
         sql="""
-        INSERT INTO kari_medal_statistics (medal_type, count, created_at)
+        INSERT INTO kari_mo.kari_statistics (medal_type, count, created_at)
         SELECT 'Bronze', COUNT(*), NOW()
         FROM olympic_dataset.athlete_event_results
         WHERE medal = 'Bronze';
@@ -57,9 +67,9 @@ with DAG(
 
     silver_task = MySqlOperator(
         task_id='silver_task',
-        mysql_conn_id='goit_mysql_db',
+        mysql_conn_id=connection_name,
         sql="""
-        INSERT INTO kari_medal_statistics (medal_type, count, created_at)
+        INSERT INTO kari_mo.kari_statistics (medal_type, count, created_at)
         SELECT 'Silver', COUNT(*), NOW()
         FROM olympic_dataset.athlete_event_results
         WHERE medal = 'Silver';
@@ -68,9 +78,9 @@ with DAG(
 
     gold_task = MySqlOperator(
         task_id='gold_task',
-        mysql_conn_id='goit_mysql_db',
+        mysql_conn_id=connection_name,
         sql="""
-        INSERT INTO kari_medal_statistics (medal_type, count, created_at)
+        INSERT INTO kari_mo.kari_statistics (medal_type, count, created_at)
         SELECT 'Gold', COUNT(*), NOW()
         FROM olympic_dataset.athlete_event_results
         WHERE medal = 'Gold';
@@ -85,9 +95,9 @@ with DAG(
 
     check_recent_record = SqlSensor(
         task_id='check_recent_record',
-        conn_id='goit_mysql_db',
+        conn_id=connection_name,
         sql="""
-        SELECT 1 FROM kari_medal_statistics
+        SELECT 1 FROM kari_mo.kari_statistics
         WHERE TIMESTAMPDIFF(SECOND, created_at, NOW()) <= 30
         ORDER BY created_at DESC
         LIMIT 1;
@@ -98,5 +108,5 @@ with DAG(
     )
 
     # Define task dependencies
-    create_table >> choose_medal
+    create_schema >> create_table >> choose_medal
     choose_medal >> [bronze_task, silver_task, gold_task] >> delay_task >> check_recent_record
